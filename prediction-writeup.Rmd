@@ -54,8 +54,9 @@ nznames <- names(all_zero_colnames)[all_zero_colnames==FALSE]
 nznames <- nznames[-(1:7)]
 nznames <- nznames[1:(length(nznames)-1)]
 corMatrix <- cor(training[nznames][, -52])
-corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
-         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+#corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+#         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+#size exceeds one mb, (can't view in github), so plot is commented out
 ```
   
 The above figure shows the correlation between different inputs. We can further use the 
