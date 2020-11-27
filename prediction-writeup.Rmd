@@ -1,0 +1,131 @@
+---
+title: 'Practical Machine Leaerning: Prediction Assignment Writeup'
+author: "Muhammad Mubashir"
+date: "11/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, message = F)
+```
+
+# Overview  
+The main goal of the project is to predict the manner in which 6 participants performed some exercise as described below. This is the “classe” variable in the training set. The machine learning algorithm described here is applied to the 20 test cases.  
+
+# Background  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  
+
+# Getting and Cleaning Data  
+### Data Sources
+The training data is availabe at this  [link](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and 
+the test data is avaialabe at this [link](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv).  
+### Dataset Overview  
+A short description of the datasets content from the authors’ website:  
+“Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).  
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg)."  
+
+## Load Data into Environment
+```{r, echo=FALSE}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(1)
+```
+```{r}
+# set the URL for the download
+UrlTrain <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+UrlTest  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+train_in <- read.csv(url(UrlTrain))
+validation  <- read.csv(url(UrlTest))
+```
+## Data Partition and Removing zero-values-columns  
+Since I’ll be predicting classes in the testing dataset, I’ll split the training data into training and testing partitions and use the pml-testing.csv as a validation sample. I’ll use cross validation within the training partition to improve the model fit and then do an out-of-sample test with the testing partition. 
+```{r, fig.width=12, fig.height=12}
+training_sample <- createDataPartition(y=train_in$classe, p=0.7, list=FALSE)
+training <- train_in[training_sample, ]
+testing <- train_in[-training_sample, ]
+
+all_zero_colnames <- sapply(names(validation), function(x) all(is.na(validation[,x])==TRUE))
+nznames <- names(all_zero_colnames)[all_zero_colnames==FALSE]
+nznames <- nznames[-(1:7)]
+nznames <- nznames[1:(length(nznames)-1)]
+corMatrix <- cor(training[nznames][, -52])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+  
+The above figure shows the correlation between different inputs. We can further use the 
+PCA for better input features. But in this case that is not necessary.  
+The models will be fit using the following data columns:  
+```{r, echo=F}
+nznames
+```
+# Machine Learning Models  
+The following two models will be used for prediction, the one with high accuracy will be selected.  
+
+1. Decision trees with CART (rpart)
+2. Random forest decision trees (rf)
+## Train Models  
+```{r}
+fitControl <- trainControl(method='cv', number = 5)
+model_cart <- train(
+  classe ~ ., 
+  data=training[, c('classe', nznames)],
+  trControl=fitControl,
+  method='rpart'
+)
+save(model_cart, file='./ModelFitCART.RData')
+
+model_rf <- train(
+  classe ~ ., 
+  data=training[, c('classe', nznames)],
+  trControl=fitControl,
+  method='rf',
+  ntree=100
+)
+save(model_rf, file='./ModelFitRF.RData')
+
+# cross validation
+#Cross validation is done for each model with K = 5
+fitControl <- trainControl(method='cv', number = 5)
+```
+
+## Models Evaluation/Assesment  
+
+```{r}
+predCART <- predict(model_cart, newdata=testing)
+cmCART <- confusionMatrix(predCART, testing$classe)
+predRF <- predict(model_rf, newdata=testing)
+cmRF <- confusionMatrix(predRF, testing$classe)
+AccuracyResults <- data.frame(
+  Model = c('CART', 'RF'),
+  Accuracy = rbind(cmCART$overall[1], cmRF$overall[1])
+)
+print(AccuracyResults)
+```
+Based on an evaluation of these 2 model fits and out-of-sample results, it looks like random forests outperforms the CART model. The confusion matrix for the random forest model is below.  
+```{r}
+cmRF$table
+```
+The most important feature are listed below, as well as shown in graph below.
+```{r, fig.height=10}
+ # make dataframe from importance() output
+varImp(model_rf)
+plot(varImp(model_rf))
+```
+
+# Prediction   
+In the last step, predict the output class for the testing data (**pml-testing.csv**).  
+```{r}
+predValidation <- predict(model_rf, newdata=validation)
+ValidationPredictionResults <- data.frame(
+  problem_id=validation$problem_id,
+  predicted=predValidation
+)
+ValidationPredictionResults
+```
+
